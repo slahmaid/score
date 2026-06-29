@@ -81,6 +81,22 @@ Live data comes from **[football-data.org](https://www.football-data.org)** (v4)
 a VPS) **or** port the `/api/worldcup` logic into a Netlify/Vercel/Cloudflare serverless
 function and point `CONFIG.api.endpoint` at it. Keep the key in an environment variable.
 
+### Match details: scorers, cards, subs, lineups & stats (optional)
+Clicking a match opens a detail popup. Basic info (kick-off, venue, referee, half-time) comes
+from football-data. The **scorers, yellow/red cards and substitutions timeline**, plus
+**lineups** and **possession-style stats**, come from **[API-Football](https://www.api-football.com)**
+(free tier). football-data's *free* plan does **not** include these.
+
+To enable them:
+1. Get a free key at api-football.com (or via RapidAPI).
+2. Create a file `site/.aftoken` containing just the key (already git-ignored).
+   - RapidAPI users: also set `AF_HOST=api-football-v1.p.rapidapi.com`.
+3. Restart `node server.js` — the startup log will show `Lineups/events/stats: ON`.
+
+The server matches each football-data fixture to the API-Football one by team names + date,
+caches the fixtures index for 1 hour, and caches each match's details (free tier ≈ 100 req/day).
+Lineups/events typically appear ~30–40 min before kickoff, so most data lights up on match days.
+
 ---
 
 ## ✍️ Step 3 — Customize

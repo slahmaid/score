@@ -240,9 +240,20 @@ img.md__flag.crest { object-fit: contain; }
 .evs { display: grid; gap: 8px; }
 .ev { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
 .ev--a { flex-direction: row-reverse; text-align: right; }
-.ev__min { min-width: 34px; font-weight: 700; color: var(--muted); font-size: .78rem; }
+.ev__min { min-width: 38px; font-weight: 700; color: var(--brand-2); font-size: .78rem; }
 .ev--a .ev__min { text-align: right; }
+.ev__ic { font-size: .9rem; }
+.ev__txt strong { color: var(--text); }
 .ev__sub { color: var(--muted); font-size: .78rem; }
+.ev__in { color: var(--brand); font-weight: 600; }
+.ev__out { color: var(--accent); }
+
+/* Scorers summary under the scoreline */
+.gsum { display: grid; grid-template-columns: 1fr auto 1fr; align-items: start; gap: 12px; margin: 4px 0 18px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: .85rem; line-height: 1.7; }
+.gsum__side { color: var(--text); }
+.gsum__side--a { text-align: right; }
+.gsum__ball { color: var(--muted); }
+.gsum__min { color: var(--brand-2); font-weight: 700; font-size: .78rem; }
 
 /* ===== Top scorers ===== */
 .scorers { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }

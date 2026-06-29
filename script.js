@@ -388,23 +388,53 @@ function lineupsBlock(lineups) {
   return `<div class="md__block"><h4 class="md__h4">Lineups</h4><div class="lu">${lineups.map(col).join("")}</div></div>`;
 }
 
+function goalSummaryBlock(m) {
+  const list = m.goalSummary;
+  if (!list || !list.length) return "";
+  const fmt = (g) => `${g.scorer || "?"}${g.pen ? " (pen)" : ""}${g.own ? " (OG)" : ""} <span class="gsum__min">${g.minute}</span>`;
+  const h = list.filter((g) => g.team === m.home).map(fmt).join("<br>");
+  const a = list.filter((g) => g.team === m.away).map(fmt).join("<br>");
+  if (!h && !a) return "";
+  return `<div class="gsum">
+    <div class="gsum__side">${h || "&nbsp;"}</div>
+    <div class="gsum__ball">⚽</div>
+    <div class="gsum__side gsum__side--a">${a || "&nbsp;"}</div>
+  </div>`;
+}
+
+function eventIcon(e) {
+  if (/goal/i.test(e.type)) return /own/i.test(e.detail) ? "⚽" : "⚽";
+  if (/card/i.test(e.type)) return /red/i.test(e.detail) ? "🟥" : "🟨";
+  if (/subst/i.test(e.type)) return "🔁";
+  return "•";
+}
+function eventText(e) {
+  if (/subst/i.test(e.type)) {
+    return `<span class="ev__in">▲ ${e.assist || "?"}</span> <span class="ev__out">▼ ${e.player || "?"}</span>`;
+  }
+  if (/goal/i.test(e.type)) {
+    const tag = /own/i.test(e.detail) ? ' <span class="ev__sub">· own goal</span>'
+      : /pen/i.test(e.detail) ? ' <span class="ev__sub">· penalty</span>' : "";
+    return `<strong>${e.player || "?"}</strong>${e.assist ? ` <span class="ev__sub">(assist: ${e.assist})</span>` : ""}${tag}`;
+  }
+  if (/card/i.test(e.type)) {
+    const tag = /yellow_red|second/i.test(e.detail) ? ' <span class="ev__sub">· 2nd yellow</span>'
+      : /red/i.test(e.detail) ? ' <span class="ev__sub">· red</span>' : "";
+    return `${e.player || "?"}${tag}`;
+  }
+  return e.player || "";
+}
 function eventsBlock(events, homeName) {
   if (!events || !events.length) return "";
-  const icon = (e) => {
-    if (/goal/i.test(e.type)) return "⚽";
-    if (/card/i.test(e.type)) return /yellow/i.test(e.detail) ? "🟨" : "🟥";
-    if (/subst/i.test(e.type)) return "🔁";
-    return "•";
-  };
   const items = events.map((e) => {
     const home = e.team === homeName;
     return `<div class="ev ${home ? "ev--h" : "ev--a"}">
       <span class="ev__min">${e.minute}</span>
-      <span class="ev__ic">${icon(e)}</span>
-      <span class="ev__txt">${e.player}${e.assist ? ` <span class="ev__sub">(${e.assist})</span>` : ""}${e.detail && !/normal/i.test(e.detail) ? ` <span class="ev__sub">· ${e.detail}</span>` : ""}</span>
+      <span class="ev__ic">${eventIcon(e)}</span>
+      <span class="ev__txt">${eventText(e)}</span>
     </div>`;
   }).join("");
-  return `<div class="md__block"><h4 class="md__h4">Match events</h4><div class="evs">${items}</div></div>`;
+  return `<div class="md__block"><h4 class="md__h4">Match timeline</h4><div class="evs">${items}</div></div>`;
 }
 
 function renderMatchModal(m, loading) {
@@ -423,6 +453,7 @@ function renderMatchModal(m, loading) {
       <div class="md__center">${scoreLine}</div>
       <div class="md__team">${badge(m.acrest, m.aflag, "md__flag")}<span>${m.away}</span></div>
     </div>
+    ${goalSummaryBlock(m)}
     <div class="md__meta">${stage}${m.matchday ? ` • Matchday ${m.matchday}` : ""}</div>
     <div class="md__rows">
       ${detailRow("Kick-off", m.kickoff)}
@@ -431,14 +462,14 @@ function renderMatchModal(m, loading) {
       ${detailRow("Referee", ref)}
       ${detailRow("Competition", m.competition)}
     </div>
+    ${eventsBlock(m.events, m.home)}
     ${statsBlock(m.stats)}
     ${lineupsBlock(m.lineups)}
-    ${eventsBlock(m.events, m.home)}
     ${loading
       ? `<p class="md__note">Loading match details…</p>`
       : (m.hasExtras
           ? ""
-          : `<p class="md__note">ℹ️ Lineups, events and detailed stats aren't available for this match (add an API-Football key to enable them where covered).</p>`)}
+          : `<p class="md__note">ℹ️ Goals, cards, substitutions, lineups and stats appear here once a match is underway — add a free API-Football key (<code>site/.aftoken</code>) to enable them.</p>`)}
   `;
 }
 

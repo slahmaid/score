@@ -191,10 +191,44 @@ function kickoffLabel(utc) {
   }).format(new Date(utc)) + " CET";
 }
 
+const minLabel = (m, inj) => (m == null ? "" : `${m}${inj ? `+${inj}` : ""}'`);
+
+// Build a chronological timeline from football-data goals / bookings / subs.
+function mapFdEvents(d) {
+  const ev = [];
+  (d.goals || []).forEach((g) => ev.push({
+    order: (g.minute || 0) + (g.injuryTime || 0) / 100 + 0.001,
+    minute: minLabel(g.minute, g.injuryTime), team: g.team?.name || "",
+    type: "Goal", player: g.scorer?.name || "", assist: g.assist?.name || "", detail: g.type || "",
+  }));
+  (d.bookings || []).forEach((b) => ev.push({
+    order: (b.minute || 0),
+    minute: minLabel(b.minute), team: b.team?.name || "",
+    type: "Card", player: b.player?.name || "", assist: "", detail: b.card || "",
+  }));
+  (d.substitutions || []).forEach((s) => ev.push({
+    order: (s.minute || 0) + 0.002,
+    minute: minLabel(s.minute), team: s.team?.name || "",
+    type: "subst", player: s.playerOut?.name || "", assist: s.playerIn?.name || "", detail: "Substitution",
+  }));
+  return ev.sort((a, b) => a.order - b.order).map(({ order, ...r }) => r);
+}
+
+// Compact scorer list for the line under the scoreline.
+function goalSummaryFrom(d) {
+  return (d.goals || []).map((g) => ({
+    minute: minLabel(g.minute, g.injuryTime), team: g.team?.name || "",
+    scorer: g.scorer?.name || "", assist: g.assist?.name || "",
+    own: /own/i.test(g.type || ""), pen: /pen/i.test(g.type || ""),
+  }));
+}
+
 function mapMatchDetail(d) {
   const st = statusOf(d.status);
   const ref = Array.isArray(d.referees) && d.referees.length
     ? { name: d.referees[0].name, nationality: d.referees[0].nationality || "" } : null;
+  const events = mapFdEvents(d);
+  const goalSummary = goalSummaryFrom(d);
   return {
     id: d.id,
     status: st,
@@ -215,8 +249,10 @@ function mapMatchDetail(d) {
     referee: ref,
     matchday: d.matchday || null,
     competition: d.competition?.name || "FIFA World Cup",
-    // Free-tier note: lineups, events and detailed stats are not provided.
-    hasExtras: false,
+    // Goals / cards / subs come from football-data; lineups & stats from API-Football.
+    events,
+    goalSummary,
+    hasExtras: events.length > 0,
   };
 }
 
@@ -271,16 +307,29 @@ function mapLineups(json) {
     subs: (t.substitutes || []).map((p) => ({ name: p.player?.name, number: p.player?.number, pos: p.player?.pos })),
   }));
 }
+// API-Football events -> canonical shape (player=OUT/scorer, assist=IN/provider)
 function mapEvents(json) {
-  return (json.response || []).map((e) => ({
-    minute: `${e.time?.elapsed ?? ""}${e.time?.extra ? `+${e.time.extra}` : ""}'`,
-    team: e.team?.name || "",
-    player: e.player?.name || "",
-    assist: e.assist?.name || "",
-    type: e.type || "",
-    detail: e.detail || "",
+  return (json.response || []).map((e) => {
+    const isSub = /subst/i.test(e.type || "");
+    const min = `${e.time?.elapsed ?? ""}${e.time?.extra ? `+${e.time.extra}` : ""}'`;
+    return {
+      minute: min,
+      team: e.team?.name || "",
+      type: e.type || "",
+      detail: e.detail || "",
+      // For subs API-Football puts the incoming player in `player`; flip to canonical.
+      player: isSub ? (e.assist?.name || "") : (e.player?.name || ""),
+      assist: isSub ? (e.player?.name || "") : (e.assist?.name || ""),
+    };
+  });
+}
+function goalSummaryFromEvents(events) {
+  return events.filter((e) => /goal/i.test(e.type)).map((e) => ({
+    minute: e.minute, team: e.team, scorer: e.player, assist: e.assist,
+    own: /own/i.test(e.detail), pen: /pen/i.test(e.detail),
   }));
 }
+
 function mapStats(json) {
   const r = json.response || [];
   if (r.length < 2) return null;
@@ -315,9 +364,14 @@ async function getMatch(id) {
       if (fid) {
         const ex = await getExtras(fid);
         detail.lineups = ex.lineups;
-        detail.events = ex.events;
         detail.stats = ex.stats;
-        detail.hasExtras = !!(ex.lineups.length || ex.events.length || (ex.stats && ex.stats.rows.length));
+        // football-data free tier has no events, so prefer API-Football's.
+        if (ex.events.length) {
+          if (!detail.events.length) detail.events = ex.events;
+          if (!detail.goalSummary.length) detail.goalSummary = goalSummaryFromEvents(ex.events);
+        }
+        detail.hasExtras = detail.hasExtras || ex.events.length > 0
+          || ex.lineups.length > 0 || !!(ex.stats && ex.stats.rows.length);
       }
     } catch (e) { console.warn("API-Football extras failed:", e.message); }
   }
