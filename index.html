@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="GoalHub EU — live World Cup scores, full match schedule, group standings, and where to watch every match legally across Europe. Highlights, news and previews." />
+  <title>GoalHub EU — World Cup Live Scores, Schedule & Where to Watch</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>" />
+
+  <!-- ===== Google AdSense ===== -->
+  <!-- 1) Get approved at https://adsense.google.com  2) Replace ca-pub-XXXXXXXXXXXXXXXX below and in script.js -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <!-- ===== Header ===== -->
+  <header class="header" id="header">
+    <div class="container header__inner">
+      <a href="#top" class="brand" aria-label="GoalHub EU home">
+        <span class="brand__mark" aria-hidden="true">⚽</span>
+        <span class="brand__name">Goal<span>Hub</span><small>EU</small></span>
+      </a>
+
+      <nav class="nav" id="nav">
+        <a href="#live">Live</a>
+        <a href="#schedule">Schedule</a>
+        <a href="#standings">Standings</a>
+        <a href="#watch">Where to Watch</a>
+        <a href="#highlights">Highlights</a>
+        <a href="#news">News</a>
+      </nav>
+
+      <div class="header__actions">
+        <a href="#watch" class="btn btn--primary btn--sm">Where to Watch</a>
+        <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <!-- ===== Hero ===== -->
+    <section class="hero">
+      <div class="hero__glow" aria-hidden="true"></div>
+      <div class="container hero__inner">
+        <span class="pill"><span class="pill__dot"></span> World Cup • Live Now</span>
+        <h1>Every <span class="grad">World Cup</span> match — scores, schedule &amp; where to watch in Europe</h1>
+        <p class="hero__sub">Real-time scores, the full fixture list, live group standings, and the official legal broadcaster for every match in your country. Plus highlights and previews.</p>
+        <div class="hero__cta">
+          <a href="#live" class="btn btn--primary">See live scores</a>
+          <a href="#watch" class="styled-button">
+            Find your channel
+            <span class="inner-button">
+              <svg id="Arrow" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" height="30px" width="30px" class="icon" aria-hidden="true">
+                <defs>
+                  <linearGradient y2="100%" x2="100%" y1="0%" x1="0%" id="iconGradient">
+                    <stop style="stop-color:#FFFFFF;stop-opacity:1" offset="0%"></stop>
+                    <stop style="stop-color:#AAAAAA;stop-opacity:1" offset="100%"></stop>
+                  </linearGradient>
+                </defs>
+                <path fill="url(#iconGradient)" d="M4 15a1 1 0 0 0 1 1h19.586l-4.292 4.292a1 1 0 0 0 1.414 1.414l6-6a.99.99 0 0 0 .292-.702V15c0-.13-.026-.26-.078-.382a.99.99 0 0 0-.216-.324l-6-6a1 1 0 0 0-1.414 1.414L24.586 14H5a1 1 0 0 0-1 1z"></path>
+              </svg>
+            </span>
+          </a>
+        </div>
+
+        <!-- Country selector -->
+        <div class="country">
+          <label for="countrySelect">📍 Your country</label>
+          <select id="countrySelect"></select>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== AD: top leaderboard ===== -->
+    <div class="container ad-wrap">
+      <div class="ad-slot" data-ad="leaderboard">
+        <span class="ad-slot__label">Advertisement</span>
+        <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" data-ad-slot="1111111111" data-ad-format="auto" data-full-width-responsive="true"></ins>
+      </div>
+    </div>
+
+    <!-- ===== Live + Schedule ===== -->
+    <section class="section" id="live">
+      <div class="container layout">
+        <div class="layout__main">
+          <div class="tabs" role="tablist">
+            <button class="tab is-active" data-tab="livePanel" role="tab">🔴 Live &amp; Today</button>
+            <button class="tab" data-tab="schedulePanel" role="tab" id="schedule">📅 Full Schedule</button>
+          </div>
+
+          <div class="panel is-active" id="livePanel" role="tabpanel">
+            <div class="matches" id="liveMatches"><p class="loading">Loading matches…</p></div>
+          </div>
+
+          <div class="panel" id="schedulePanel" role="tabpanel">
+            <div class="filter-bar">
+              <button class="chip is-active" data-stage="all">All</button>
+              <button class="chip" data-stage="Group">Group stage</button>
+              <button class="chip" data-stage="Round of 16">Round of 16</button>
+              <button class="chip" data-stage="Quarter-final">Quarter-finals</button>
+              <button class="chip" data-stage="Semi-final">Semi-finals</button>
+              <button class="chip" data-stage="Final">Final</button>
+            </div>
+            <div class="matches" id="scheduleMatches"></div>
+          </div>
+        </div>
+
+        <!-- Sidebar with sticky ad -->
+        <aside class="layout__side">
+          <div class="ad-slot ad-slot--rect" data-ad="sidebar">
+            <span class="ad-slot__label">Advertisement</span>
+            <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" data-ad-slot="2222222222" data-ad-format="rectangle"></ins>
+          </div>
+          <div class="side-card">
+            <h3>⭐ Match of the day</h3>
+            <p id="motd">—</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ===== AD: in-content ===== -->
+    <div class="container ad-wrap">
+      <div class="ad-slot" data-ad="incontent">
+        <span class="ad-slot__label">Advertisement</span>
+        <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" data-ad-slot="3333333333" data-ad-format="auto" data-full-width-responsive="true"></ins>
+      </div>
+    </div>
+
+    <!-- ===== Standings ===== -->
+    <section class="section section--alt" id="standings">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow">Group stage</span>
+          <h2>Group standings</h2>
+          <p>Live tables — top two of each group advance.</p>
+        </div>
+        <div class="groups" id="groups"></div>
+      </div>
+    </section>
+
+    <!-- ===== Where to watch ===== -->
+    <section class="section" id="watch">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow">Legal &amp; official</span>
+          <h2>Where to watch in <span id="watchCountry">Europe</span></h2>
+          <p>Official rights-holding broadcasters for your country. Links go to the legal stream/TV provider.</p>
+        </div>
+        <div class="watch-grid" id="watchGrid"></div>
+        <p class="fineprint">Broadcast rights vary by country and may change. Always confirm on the broadcaster's official site.</p>
+      </div>
+    </section>
+
+    <!-- ===== Highlights (official embeds) ===== -->
+    <section class="section section--alt" id="highlights">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow">Official video</span>
+          <h2>Highlights &amp; best moments</h2>
+          <p>Embedded from official channels — fully legal to display.</p>
+        </div>
+        <div class="video-grid" id="videoGrid"></div>
+      </div>
+    </section>
+
+    <!-- ===== AD: in-content 2 ===== -->
+    <div class="container ad-wrap">
+      <div class="ad-slot" data-ad="incontent2">
+        <span class="ad-slot__label">Advertisement</span>
+        <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" data-ad-slot="4444444444" data-ad-format="auto" data-full-width-responsive="true"></ins>
+      </div>
+    </div>
+
+    <!-- ===== News / previews ===== -->
+    <section class="section" id="news">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow">Read up</span>
+          <h2>News, previews &amp; predictions</h2>
+          <p>Original articles — this is the content AdSense rewards.</p>
+        </div>
+        <div class="news-grid" id="newsGrid"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== Footer ===== -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__col footer__brand">
+        <a href="#top" class="brand">
+          <span class="brand__mark" aria-hidden="true">⚽</span>
+          <span class="brand__name">Goal<span>Hub</span><small>EU</small></span>
+        </a>
+        <p>Live World Cup scores, schedules and legal viewing guides for fans across Europe.</p>
+      </div>
+      <div class="footer__col">
+        <h4>Explore</h4>
+        <a href="#live">Live scores</a>
+        <a href="#schedule">Schedule</a>
+        <a href="#standings">Standings</a>
+        <a href="#watch">Where to watch</a>
+      </div>
+      <div class="footer__col">
+        <h4>More</h4>
+        <a href="#highlights">Highlights</a>
+        <a href="#news">News</a>
+      </div>
+      <div class="footer__col">
+        <h4>Legal</h4>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="terms.html">Terms &amp; Disclaimer</a>
+      </div>
+    </div>
+    <div class="container footer__bottom">
+      <p>© <span id="year"></span> GoalHub EU. Independent fan site — not affiliated with FIFA or any broadcaster.</p>
+      <p class="footer__disclaimer">GoalHub EU does not host, stream or rebroadcast any match footage. We provide scores, schedules and links to official, licensed broadcasters. All trademarks belong to their respective owners. Embedded videos are served by their official rights-holders.</p>
+    </div>
+  </footer>
+
+  <!-- ===== Cookie consent (required for ads in EU) ===== -->
+  <div class="cookie" id="cookie" hidden>
+    <p>We use cookies and partners (incl. Google) to show personalised ads and analyse traffic. See our <a href="privacy.html">Privacy Policy</a>.</p>
+    <div class="cookie__btns">
+      <button class="btn btn--ghost btn--sm" id="cookieReject">Reject</button>
+      <button class="btn btn--primary btn--sm" id="cookieAccept">Accept</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
