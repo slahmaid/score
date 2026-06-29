@@ -24,6 +24,19 @@ const FD_TOKEN = resolveToken();
 const FD_BASE = "https://api.football-data.org/v4";
 const COMPETITION = process.env.FD_COMPETITION || "WC"; // FIFA World Cup
 
+// ---- API-Football (api-sports.io) — optional, adds lineups/events/stats -----
+// Provide a key via env AF_TOKEN or a git-ignored ".aftoken" file.
+// Free key: https://www.api-football.com  (or via RapidAPI — set AF_HOST too)
+function resolveAfToken() {
+  if (process.env.AF_TOKEN) return process.env.AF_TOKEN.trim();
+  try { return fs.readFileSync(path.join(__dirname, ".aftoken"), "utf8").trim(); }
+  catch { return ""; }
+}
+const AF_TOKEN = resolveAfToken();
+const AF_HOST = process.env.AF_HOST || "v3.football.api-sports.io"; // or api-football-v1.p.rapidapi.com
+const AF_LEAGUE = process.env.AF_LEAGUE || "1";   // FIFA World Cup
+const AF_SEASON = process.env.AF_SEASON || "2026";
+
 // ---- simple in-memory cache (respect free-tier rate limits ~10 req/min) ----
 const cache = { data: null, ts: 0 };
 const CACHE_MS = 30 * 1000;
@@ -196,6 +209,7 @@ function mapMatchDetail(d) {
     winner: d.score?.winner || null,
     minute: st === "live" ? (d.minute ? `${d.minute}'` : "LIVE") : null,
     time: timeLabel(d.utcDate),
+    utc: d.utcDate || null,
     kickoff: kickoffLabel(d.utcDate),
     venue: d.venue || null,
     referee: ref,
@@ -212,12 +226,102 @@ async function fdGet(pathname) {
   return res.json();
 }
 
+/* ---- API-Football: lineups, events, statistics (optional enrichment) ----- */
+const normName = (s) => (s || "").toLowerCase().normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "").replace(/\b(fr|pr|republic|of)\b/g, "").replace(/[^a-z0-9]/g, "");
+
+async function afGet(p) {
+  const isRapid = AF_HOST.includes("rapidapi");
+  const headers = isRapid
+    ? { "x-rapidapi-key": AF_TOKEN, "x-rapidapi-host": AF_HOST }
+    : { "x-apisports-key": AF_TOKEN };
+  const res = await fetch(`https://${AF_HOST}${p}`, { headers });
+  if (!res.ok) throw new Error(`api-football ${p} -> ${res.status}`);
+  return res.json();
+}
+
+// Cache the WC fixtures index (team-pair -> AF fixture id) for 1 hour
+let afIndex = { map: null, ts: 0 };
+async function getAfIndex() {
+  if (afIndex.map && Date.now() - afIndex.ts < 60 * 60 * 1000) return afIndex.map;
+  const json = await afGet(`/fixtures?league=${AF_LEAGUE}&season=${AF_SEASON}`);
+  const map = new Map();
+  (json.response || []).forEach((f) => {
+    const key = `${normName(f.teams.home.name)}|${normName(f.teams.away.name)}`;
+    const arr = map.get(key) || [];
+    arr.push({ id: f.fixture.id, date: (f.fixture.date || "").slice(0, 10) });
+    map.set(key, arr);
+  });
+  afIndex = { map, ts: Date.now() };
+  return map;
+}
+function resolveFixtureId(map, detail) {
+  const arr = map.get(`${normName(detail.home)}|${normName(detail.away)}`);
+  if (!arr || !arr.length) return null;
+  const date = (detail.utc || "").slice(0, 10);
+  return (arr.find((x) => x.date === date) || arr[0]).id;
+}
+
+function mapLineups(json) {
+  return (json.response || []).map((t) => ({
+    team: t.team?.name || "",
+    formation: t.formation || "",
+    coach: t.coach?.name || "",
+    startXI: (t.startXI || []).map((p) => ({ name: p.player?.name, number: p.player?.number, pos: p.player?.pos })),
+    subs: (t.substitutes || []).map((p) => ({ name: p.player?.name, number: p.player?.number, pos: p.player?.pos })),
+  }));
+}
+function mapEvents(json) {
+  return (json.response || []).map((e) => ({
+    minute: `${e.time?.elapsed ?? ""}${e.time?.extra ? `+${e.time.extra}` : ""}'`,
+    team: e.team?.name || "",
+    player: e.player?.name || "",
+    assist: e.assist?.name || "",
+    type: e.type || "",
+    detail: e.detail || "",
+  }));
+}
+function mapStats(json) {
+  const r = json.response || [];
+  if (r.length < 2) return null;
+  const [a, b] = r;
+  const rows = (a.statistics || []).map((s, i) => ({
+    type: s.type,
+    home: s.value,
+    away: (b.statistics.find((x) => x.type === s.type) || b.statistics[i] || {}).value,
+  })).filter((x) => x.home != null || x.away != null);
+  return { home: a.team?.name, away: b.team?.name, rows };
+}
+
+async function getExtras(fixtureId) {
+  const [lu, ev, st] = await Promise.all([
+    afGet(`/fixtures/lineups?fixture=${fixtureId}`).catch(() => ({ response: [] })),
+    afGet(`/fixtures/events?fixture=${fixtureId}`).catch(() => ({ response: [] })),
+    afGet(`/fixtures/statistics?fixture=${fixtureId}`).catch(() => ({ response: [] })),
+  ]);
+  return { lineups: mapLineups(lu), events: mapEvents(ev), stats: mapStats(st) };
+}
+
 // per-match cache (id -> { data, ts })
 const matchCache = new Map();
 async function getMatch(id) {
   const hit = matchCache.get(id);
   if (hit && Date.now() - hit.ts < CACHE_MS) return hit.data;
   const detail = mapMatchDetail(await fdGet(`/matches/${id}`));
+
+  if (AF_TOKEN) {
+    try {
+      const fid = resolveFixtureId(await getAfIndex(), detail);
+      if (fid) {
+        const ex = await getExtras(fid);
+        detail.lineups = ex.lineups;
+        detail.events = ex.events;
+        detail.stats = ex.stats;
+        detail.hasExtras = !!(ex.lineups.length || ex.events.length || (ex.stats && ex.stats.rows.length));
+      }
+    } catch (e) { console.warn("API-Football extras failed:", e.message); }
+  }
+
   matchCache.set(id, { data: detail, ts: Date.now() });
   return detail;
 }
@@ -297,8 +401,9 @@ http.createServer(async (req, res) => {
   console.log(`  Live data proxy   →  http://localhost:${PORT}/api/worldcup`);
   console.log(`  Competition: ${COMPETITION} | data: football-data.org`);
   if (!FD_TOKEN) {
-    console.log(`  ⚠ No API key found — serving SAMPLE data only.`);
+    console.log(`  ⚠ No football-data key — serving SAMPLE data only.`);
     console.log(`    Add a key: create a ".fdtoken" file here, or set FD_TOKEN env var.`);
   }
+  console.log(`  Lineups/events/stats: ${AF_TOKEN ? "ON (API-Football)" : "off — add a \".aftoken\" file to enable"}`);
   console.log("");
 });

@@ -357,6 +357,56 @@ function detailRow(label, value) {
   return value ? `<div class="md__row"><span class="md__k">${label}</span><span class="md__v">${value}</span></div>` : "";
 }
 
+const num = (v) => { const n = parseFloat(String(v ?? "").replace("%", "")); return isNaN(n) ? null : n; };
+
+function statsBlock(stats) {
+  if (!stats || !stats.rows || !stats.rows.length) return "";
+  const rows = stats.rows.map((r) => {
+    const h = num(r.home), a = num(r.away);
+    let bar = "";
+    if (h != null && a != null && (h + a) > 0) {
+      const hp = Math.round((h / (h + a)) * 100);
+      bar = `<div class="sbar"><span class="sbar__h" style="width:${hp}%"></span><span class="sbar__a" style="width:${100 - hp}%"></span></div>`;
+    }
+    return `<div class="srow">
+      <span class="srow__h">${r.home ?? "–"}</span>
+      <span class="srow__t">${r.type}</span>
+      <span class="srow__a">${r.away ?? "–"}</span>
+    </div>${bar}`;
+  }).join("");
+  return `<div class="md__block"><h4 class="md__h4">Match stats</h4>${rows}</div>`;
+}
+
+function lineupsBlock(lineups) {
+  if (!lineups || !lineups.length) return "";
+  const col = (t) => `
+    <div class="lu__col">
+      <div class="lu__team">${t.team}${t.formation ? ` <span class="lu__form">${t.formation}</span>` : ""}</div>
+      <ol class="lu__list">${(t.startXI || []).map((p) => `<li><span class="lu__num">${p.number ?? ""}</span>${p.name || ""}${p.pos ? ` <span class="lu__pos">${p.pos}</span>` : ""}</li>`).join("")}</ol>
+      ${t.coach ? `<div class="lu__coach">Coach: ${t.coach}</div>` : ""}
+    </div>`;
+  return `<div class="md__block"><h4 class="md__h4">Lineups</h4><div class="lu">${lineups.map(col).join("")}</div></div>`;
+}
+
+function eventsBlock(events, homeName) {
+  if (!events || !events.length) return "";
+  const icon = (e) => {
+    if (/goal/i.test(e.type)) return "⚽";
+    if (/card/i.test(e.type)) return /yellow/i.test(e.detail) ? "🟨" : "🟥";
+    if (/subst/i.test(e.type)) return "🔁";
+    return "•";
+  };
+  const items = events.map((e) => {
+    const home = e.team === homeName;
+    return `<div class="ev ${home ? "ev--h" : "ev--a"}">
+      <span class="ev__min">${e.minute}</span>
+      <span class="ev__ic">${icon(e)}</span>
+      <span class="ev__txt">${e.player}${e.assist ? ` <span class="ev__sub">(${e.assist})</span>` : ""}${e.detail && !/normal/i.test(e.detail) ? ` <span class="ev__sub">· ${e.detail}</span>` : ""}</span>
+    </div>`;
+  }).join("");
+  return `<div class="md__block"><h4 class="md__h4">Match events</h4><div class="evs">${items}</div></div>`;
+}
+
 function renderMatchModal(m, loading) {
   const stage = m.stage === "Group" ? `Group ${m.group}` : m.stage;
   let scoreLine;
@@ -381,8 +431,14 @@ function renderMatchModal(m, loading) {
       ${detailRow("Referee", ref)}
       ${detailRow("Competition", m.competition)}
     </div>
-    ${loading ? `<p class="md__note">Loading match details…</p>` :
-      `<p class="md__note">ℹ️ Lineups, goals/cards and possession-style stats aren't available on the free data plan. Ask to add API-Football to unlock them.</p>`}
+    ${statsBlock(m.stats)}
+    ${lineupsBlock(m.lineups)}
+    ${eventsBlock(m.events, m.home)}
+    ${loading
+      ? `<p class="md__note">Loading match details…</p>`
+      : (m.hasExtras
+          ? ""
+          : `<p class="md__note">ℹ️ Lineups, events and detailed stats aren't available for this match (add an API-Football key to enable them where covered).</p>`)}
   `;
 }
 

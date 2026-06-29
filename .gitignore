@@ -1,5 +1,6 @@
 # Secrets — never commit
 .fdtoken
+.aftoken
 .env
 *.local
 
