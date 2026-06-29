@@ -266,7 +266,21 @@ async function fdGet(pathname) {
 const normName = (s) => (s || "").toLowerCase().normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "").replace(/\b(fr|pr|republic|of|ir|the)\b/g, "").replace(/[^a-z0-9]/g, "");
 
+// The free RapidAPI plan is tightly rate-limited (≈1 req/s), so serialize every
+// SportAPI call with a minimum gap to avoid 429 Too Many Requests.
+const SA_MIN_GAP = Number(process.env.SPORTAPI_GAP_MS || 1200);
+let saChain = Promise.resolve();
+let saLast = 0;
+function saThrottle() {
+  saChain = saChain.then(async () => {
+    const gap = SA_MIN_GAP - (Date.now() - saLast);
+    if (gap > 0) await new Promise((r) => setTimeout(r, gap));
+    saLast = Date.now();
+  });
+  return saChain;
+}
 async function saGet(p) {
+  await saThrottle();
   const res = await fetch(`https://${SA_HOST}${p}`, {
     headers: { "x-rapidapi-host": SA_HOST, "x-rapidapi-key": AF_TOKEN },
   });

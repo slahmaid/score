@@ -14,4 +14,4 @@ Thumbs.db
 .vscode/
 
 # temp probes
-_probe_*.txt
+_probe_*
