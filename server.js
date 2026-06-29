@@ -294,6 +294,21 @@ function resolveEventId(map, detail) {
   return map.get(`${normName(detail.home)}|${normName(detail.away)}`) || null;
 }
 
+// Try the match date and ±1 day (SofaScore groups events by local date, which can
+// drift from the UTC date for late/early kickoffs). Works for past & future matches.
+async function findSaEventId(detail) {
+  if (!detail.utc) return null;
+  const t = new Date(detail.utc).getTime();
+  const dates = [t, t - 864e5, t + 864e5].map((ms) => new Date(ms).toISOString().slice(0, 10));
+  for (const date of dates) {
+    try {
+      const eid = resolveEventId(await getSaIndexForDate(date), detail);
+      if (eid) return eid;
+    } catch (e) { /* try next date */ }
+  }
+  return null;
+}
+
 const saMinute = (i) => (i.time == null ? "" : (i.addedTime ? `${i.time}+${i.addedTime}'` : `${i.time}'`));
 
 // SofaScore incidents -> canonical events (player=OUT/scorer, assist=IN/provider)
@@ -374,17 +389,18 @@ async function getExtras(eventId, homeName, awayName) {
   };
 }
 
-// per-match cache (id -> { data, ts })
+// per-match cache (id -> { data, ts, ttl }). Finished matches are immutable, so
+// they're cached for 12h; live/upcoming use the short TTL.
 const matchCache = new Map();
+const MATCH_TTL_DONE = 12 * 60 * 60 * 1000;
 async function getMatch(id) {
   const hit = matchCache.get(id);
-  if (hit && Date.now() - hit.ts < CACHE_MS) return hit.data;
+  if (hit && Date.now() - hit.ts < hit.ttl) return hit.data;
   const detail = mapMatchDetail(await fdGet(`/matches/${id}`));
 
   if (AF_TOKEN) {
     try {
-      const date = (detail.utc || "").slice(0, 10);
-      const eid = date ? resolveEventId(await getSaIndexForDate(date), detail) : null;
+      const eid = await findSaEventId(detail);
       if (eid) {
         const ex = await getExtras(eid, detail.home, detail.away);
         if (ex.lineups.length) detail.lineups = ex.lineups;
@@ -399,7 +415,10 @@ async function getMatch(id) {
     } catch (e) { console.warn("SportAPI extras failed:", e.message); }
   }
 
-  matchCache.set(id, { data: detail, ts: Date.now() });
+  // Cache finished matches long-term only once their details are in hand, so a
+  // transient enrichment failure isn't frozen for 12h.
+  const ttl = (detail.status === "ft" && detail.hasExtras) ? MATCH_TTL_DONE : CACHE_MS;
+  matchCache.set(id, { data: detail, ts: Date.now(), ttl });
   return detail;
 }
 
