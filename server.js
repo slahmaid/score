@@ -66,11 +66,13 @@ const flagFor = (name) => FLAGS[name] || "🏳️";
 
 const STAGE_LABEL = {
   GROUP_STAGE: "Group",
+  LAST_32: "Round of 32",
+  ROUND_OF_32: "Round of 32",
   LAST_16: "Round of 16",
   ROUND_OF_16: "Round of 16",
   QUARTER_FINALS: "Quarter-final",
   SEMI_FINALS: "Semi-final",
-  THIRD_PLACE: "Final",
+  THIRD_PLACE: "Third place",
   FINAL: "Final",
 };
 
@@ -168,10 +170,56 @@ function buildMeta(matches, standingsJson) {
   };
 }
 
+function kickoffLabel(utc) {
+  if (!utc) return "TBD";
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short", day: "numeric", month: "short",
+    hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris", hour12: false,
+  }).format(new Date(utc)) + " CET";
+}
+
+function mapMatchDetail(d) {
+  const st = statusOf(d.status);
+  const ref = Array.isArray(d.referees) && d.referees.length
+    ? { name: d.referees[0].name, nationality: d.referees[0].nationality || "" } : null;
+  return {
+    id: d.id,
+    status: st,
+    stage: STAGE_LABEL[d.stage] || "",
+    group: groupLetter(d.group),
+    home: d.homeTeam?.name || "TBD", hflag: flagFor(d.homeTeam?.name), hcrest: d.homeTeam?.crest || null,
+    away: d.awayTeam?.name || "TBD", aflag: flagFor(d.awayTeam?.name), acrest: d.awayTeam?.crest || null,
+    hs: d.score?.fullTime?.home ?? null,
+    as: d.score?.fullTime?.away ?? null,
+    htHome: d.score?.halfTime?.home ?? null,
+    htAway: d.score?.halfTime?.away ?? null,
+    winner: d.score?.winner || null,
+    minute: st === "live" ? (d.minute ? `${d.minute}'` : "LIVE") : null,
+    time: timeLabel(d.utcDate),
+    kickoff: kickoffLabel(d.utcDate),
+    venue: d.venue || null,
+    referee: ref,
+    matchday: d.matchday || null,
+    competition: d.competition?.name || "FIFA World Cup",
+    // Free-tier note: lineups, events and detailed stats are not provided.
+    hasExtras: false,
+  };
+}
+
 async function fdGet(pathname) {
   const res = await fetch(`${FD_BASE}${pathname}`, { headers: { "X-Auth-Token": FD_TOKEN } });
   if (!res.ok) throw new Error(`football-data ${pathname} -> ${res.status} ${res.statusText}`);
   return res.json();
+}
+
+// per-match cache (id -> { data, ts })
+const matchCache = new Map();
+async function getMatch(id) {
+  const hit = matchCache.get(id);
+  if (hit && Date.now() - hit.ts < CACHE_MS) return hit.data;
+  const detail = mapMatchDetail(await fdGet(`/matches/${id}`));
+  matchCache.set(id, { data: detail, ts: Date.now() });
+  return detail;
 }
 
 async function getWorldCup() {
@@ -227,6 +275,22 @@ http.createServer(async (req, res) => {
     }
     return;
   }
+
+  if (req.url.startsWith("/api/match")) {
+    const id = new URL(req.url, `http://localhost:${PORT}`).searchParams.get("id");
+    if (!id || !/^\d+$/.test(id)) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "invalid id" })); return; }
+    try {
+      const detail = await getMatch(id);
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=30" });
+      res.end(JSON.stringify(detail));
+    } catch (e) {
+      console.error(e.message);
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   serveStatic(req, res);
 }).listen(PORT, () => {
   console.log(`\n  GoalHub EU running →  http://localhost:${PORT}`);

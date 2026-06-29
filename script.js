@@ -127,7 +127,8 @@ function matchCard(m) {
     center = `<div class="match__time">${t}</div><span class="match__status match__status--up">Upcoming</span>`;
   }
   const meta = [m.stage === "Group" ? `Group ${m.group}` : m.stage, m.time].filter(Boolean).join(" • ");
-  return `<div class="match${m.status === "live" ? " match--live" : ""}">
+  const clickable = m.id ? ` match--clickable" data-id="${m.id}` : "";
+  return `<div class="match${m.status === "live" ? " match--live" : ""}${clickable}">
     <div class="match__team match__team--home"><span>${m.home}</span>${badge(m.hcrest, m.hflag, "match__flag")}</div>
     <div class="match__center">${center}</div>
     <div class="match__team">${badge(m.acrest, m.aflag, "match__flag")}<span>${m.away}</span></div>
@@ -173,6 +174,42 @@ function renderGroups(groups) {
         </tbody>
       </table>
     </div>`).join("");
+}
+
+/* ---------- Knockout bracket ---------- */
+const KO_STAGES = ["Round of 32", "Round of 16", "Quarter-final", "Semi-final", "Final"];
+const KO_TITLES = { "Round of 32": "Round of 32", "Round of 16": "Round of 16", "Quarter-final": "Quarter-finals", "Semi-final": "Semi-finals", "Final": "Final" };
+
+function bracketTie(m) {
+  const score = (m.status === "ft" || m.status === "live")
+    ? `<span class="tie__score">${m.hs}–${m.as}</span>`
+    : `<span class="tie__time">${m.time || "TBD"}</span>`;
+  const cls = m.id ? "tie tie--clickable" : "tie";
+  const idAttr = m.id ? ` data-id="${m.id}"` : "";
+  const winH = m.status === "ft" && m.hs > m.as ? " tie__row--win" : "";
+  const winA = m.status === "ft" && m.as > m.hs ? " tie__row--win" : "";
+  return `<div class="${cls}"${idAttr}>
+    <div class="tie__row${winH}">${badge(m.hcrest, m.hflag, "tie__flag")}<span class="tie__name">${m.home}</span>${m.hs != null ? `<b>${m.hs}</b>` : ""}</div>
+    <div class="tie__row${winA}">${badge(m.acrest, m.aflag, "tie__flag")}<span class="tie__name">${m.away}</span>${m.as != null ? `<b>${m.as}</b>` : ""}</div>
+    <div class="tie__foot">${m.status === "live" ? `<span class="tie__live">● ${m.minute || "LIVE"}</span>` : score}</div>
+  </div>`;
+}
+
+function renderBracket(matches) {
+  const wrap = $("#bracket-cols");
+  if (!wrap) return;
+  const present = KO_STAGES.filter((s) => matches.some((m) => m.stage === s));
+  if (!present.length) {
+    wrap.innerHTML = `<p class="loading">The knockout bracket appears once the group stage is complete.</p>`;
+    return;
+  }
+  wrap.innerHTML = present.map((stage) => {
+    const ties = matches.filter((m) => m.stage === stage);
+    return `<div class="bracket__col">
+      <h4 class="bracket__title">${KO_TITLES[stage] || stage}</h4>
+      <div class="bracket__ties">${ties.map(bracketTie).join("")}</div>
+    </div>`;
+  }).join("");
 }
 
 function renderScorers(list) {
@@ -305,11 +342,83 @@ async function loadData() {
   renderLive(allMatches);
   renderSchedule(activeStage);
   renderGroups(groups);
+  renderBracket(allMatches);
   renderScorers(scorers);
   renderStats(meta || computeMeta(allMatches));
   setUpdated(meta && meta.lastUpdated);
   return live;
 }
+
+/* ============================ Match details modal ============================ */
+const modal = $("#matchModal");
+const modalBody = $("#matchModalBody");
+
+function detailRow(label, value) {
+  return value ? `<div class="md__row"><span class="md__k">${label}</span><span class="md__v">${value}</span></div>` : "";
+}
+
+function renderMatchModal(m, loading) {
+  const stage = m.stage === "Group" ? `Group ${m.group}` : m.stage;
+  let scoreLine;
+  if (m.status === "ft") scoreLine = `<span class="md__score">${m.hs}–${m.as}</span><span class="md__tag">Full time</span>`;
+  else if (m.status === "live") scoreLine = `<span class="md__score">${m.hs}–${m.as}</span><span class="md__tag md__tag--live">● ${m.minute || "LIVE"}</span>`;
+  else scoreLine = `<span class="md__vs">vs</span><span class="md__tag">${m.kickoff || m.time || "Upcoming"}</span>`;
+
+  const ht = (m.htHome != null && m.htAway != null) ? `${m.htHome}–${m.htAway}` : "";
+  const ref = m.referee ? `${m.referee.name}${m.referee.nationality ? ` (${m.referee.nationality})` : ""}` : "";
+
+  modalBody.innerHTML = `
+    <div class="md__head">
+      <div class="md__team">${badge(m.hcrest, m.hflag, "md__flag")}<span>${m.home}</span></div>
+      <div class="md__center">${scoreLine}</div>
+      <div class="md__team">${badge(m.acrest, m.aflag, "md__flag")}<span>${m.away}</span></div>
+    </div>
+    <div class="md__meta">${stage}${m.matchday ? ` • Matchday ${m.matchday}` : ""}</div>
+    <div class="md__rows">
+      ${detailRow("Kick-off", m.kickoff)}
+      ${detailRow("Half-time", ht)}
+      ${detailRow("Venue", m.venue)}
+      ${detailRow("Referee", ref)}
+      ${detailRow("Competition", m.competition)}
+    </div>
+    ${loading ? `<p class="md__note">Loading match details…</p>` :
+      `<p class="md__note">ℹ️ Lineups, goals/cards and possession-style stats aren't available on the free data plan. Ask to add API-Football to unlock them.</p>`}
+  `;
+}
+
+async function openMatch(id) {
+  const base = allMatches.find((m) => String(m.id) === String(id));
+  if (!base) return;
+  renderMatchModal(base, true);
+  modal.hidden = false;
+  document.body.style.overflow = "hidden";
+  if (CONFIG.api.enabled) {
+    try {
+      const res = await fetch(`/api/match?id=${id}`, { cache: "no-store" });
+      if (res.ok) {
+        const detail = await res.json();
+        if (!detail.error) { renderMatchModal({ ...base, ...detail }, false); return; }
+      }
+    } catch (e) { /* keep base info */ }
+  }
+  renderMatchModal(base, false);
+}
+
+function closeModal() {
+  modal.hidden = true;
+  document.body.style.overflow = "";
+}
+
+// Open on match/tie click (event delegation)
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-id]");
+  if (el && (el.classList.contains("match--clickable") || el.classList.contains("tie--clickable"))) {
+    openMatch(el.dataset.id);
+  }
+});
+// Close handlers
+modal.addEventListener("click", (e) => { if (e.target.hasAttribute("data-close")) closeModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !modal.hidden) closeModal(); });
 
 // Auto-refresh live scores (only when API is enabled and there are live games)
 function startAutoRefresh() {

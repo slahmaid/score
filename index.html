@@ -30,6 +30,7 @@
         <a href="#live">Live</a>
         <a href="#schedule">Schedule</a>
         <a href="#standings">Standings</a>
+        <a href="#bracket">Bracket</a>
         <a href="#scorers">Top Scorers</a>
         <a href="#watch">Where to Watch</a>
         <a href="#highlights">Highlights</a>
@@ -125,6 +126,7 @@
             <div class="filter-bar">
               <button class="chip is-active" data-stage="all">All</button>
               <button class="chip" data-stage="Group">Group stage</button>
+              <button class="chip" data-stage="Round of 32">Round of 32</button>
               <button class="chip" data-stage="Round of 16">Round of 16</button>
               <button class="chip" data-stage="Quarter-final">Quarter-finals</button>
               <button class="chip" data-stage="Semi-final">Semi-finals</button>
@@ -165,6 +167,20 @@
           <p>Live tables — top two of each group advance.</p>
         </div>
         <div class="groups" id="groups"></div>
+      </div>
+    </section>
+
+    <!-- ===== Knockout bracket ===== -->
+    <section class="section" id="bracket">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow">Road to the final</span>
+          <h2>Knockout bracket</h2>
+          <p>From the Round of 32 to the Final. Tap any tie for match details.</p>
+        </div>
+        <div class="bracket-scroll">
+          <div class="bracket" id="bracket-cols"></div>
+        </div>
       </div>
     </section>
 
@@ -227,6 +243,15 @@
 
   </main>
 
+  <!-- ===== Match details modal ===== -->
+  <div class="modal" id="matchModal" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="mdTitle">
+      <button class="modal__close" data-close aria-label="Close">&times;</button>
+      <div class="modal__body" id="matchModalBody"></div>
+    </div>
+  </div>
+
   <!-- ===== Footer ===== -->
   <footer class="footer">
     <div class="container footer__inner">
@@ -242,6 +267,7 @@
         <a href="#live">Live scores</a>
         <a href="#schedule">Schedule</a>
         <a href="#standings">Standings</a>
+        <a href="#bracket">Bracket</a>
         <a href="#scorers">Top scorers</a>
         <a href="#watch">Where to watch</a>
       </div>
