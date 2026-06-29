@@ -84,18 +84,22 @@ function and point `CONFIG.api.endpoint` at it. Keep the key in an environment v
 ### Match details: scorers, cards, subs, lineups & stats (optional)
 Clicking a match opens a detail popup. Basic info (kick-off, venue, referee, half-time) comes
 from football-data. The **scorers, yellow/red cards and substitutions timeline**, plus
-**lineups** and **possession-style stats**, come from **[API-Football](https://www.api-football.com)**
-(free tier). football-data's *free* plan does **not** include these.
+**lineups** and **full match statistics**, come from **SportAPI** (`sportapi7` on RapidAPI,
+SofaScore data). football-data's *free* plan does **not** include these.
 
 To enable them:
-1. Get a free key at api-football.com (or via RapidAPI).
-2. Create a file `site/.aftoken` containing just the key (already git-ignored).
-   - RapidAPI users: also set `AF_HOST=api-football-v1.p.rapidapi.com`.
-3. Restart `node server.js` — the startup log will show `Lineups/events/stats: ON`.
+1. On RapidAPI, open **SportAPI** and click **Subscribe to Test** → choose the free **Basic** plan.
+   (Without an active subscription the API returns `403 You are not subscribed to this API`.)
+2. Copy your `X-RapidAPI-Key` into a file `site/.aftoken` (just the key — already git-ignored).
+   - Or set it via env: `SPORTAPI_KEY=yourkey node server.js`.
+3. Restart `node server.js` — the startup log will show `Lineups/events/stats: ON (SportAPI / SofaScore)`.
 
-The server matches each football-data fixture to the API-Football one by team names + date,
-caches the fixtures index for 1 hour, and caches each match's details (free tier ≈ 100 req/day).
-Lineups/events typically appear ~30–40 min before kickoff, so most data lights up on match days.
+How it works: for each match the server looks up SofaScore's scheduled World Cup events on that
+date, matches the fixture by team names, then pulls `/event/{id}/incidents`, `/lineups` and
+`/statistics`. The per-date index is cached for 1 hour and each match's details are cached too,
+to stay within RapidAPI's free quota. Lineups/incidents typically appear ~30–40 min before
+kickoff, so most data lights up on match days. Override the World Cup tournament id with
+`WC_UT_ID` if needed (defaults to SofaScore's `16`).
 
 ---
 

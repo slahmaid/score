@@ -24,18 +24,18 @@ const FD_TOKEN = resolveToken();
 const FD_BASE = "https://api.football-data.org/v4";
 const COMPETITION = process.env.FD_COMPETITION || "WC"; // FIFA World Cup
 
-// ---- API-Football (api-sports.io) — optional, adds lineups/events/stats -----
-// Provide a key via env AF_TOKEN or a git-ignored ".aftoken" file.
-// Free key: https://www.api-football.com  (or via RapidAPI — set AF_HOST too)
+// ---- SportAPI (sportapi7 on RapidAPI, SofaScore data) — optional enrichment --
+// Adds the scorers/cards/subs timeline, lineups and full match statistics.
+// Provide a key via env SPORTAPI_KEY or a git-ignored ".aftoken" file, then
+// SUBSCRIBE (free Basic plan) to SportAPI on RapidAPI.
 function resolveAfToken() {
-  if (process.env.AF_TOKEN) return process.env.AF_TOKEN.trim();
+  if (process.env.SPORTAPI_KEY) return process.env.SPORTAPI_KEY.trim();
   try { return fs.readFileSync(path.join(__dirname, ".aftoken"), "utf8").trim(); }
   catch { return ""; }
 }
 const AF_TOKEN = resolveAfToken();
-const AF_HOST = process.env.AF_HOST || "v3.football.api-sports.io"; // or api-football-v1.p.rapidapi.com
-const AF_LEAGUE = process.env.AF_LEAGUE || "1";   // FIFA World Cup
-const AF_SEASON = process.env.AF_SEASON || "2026";
+const SA_HOST = process.env.SPORTAPI_HOST || "sportapi7.p.rapidapi.com";
+const WC_UT_ID = Number(process.env.WC_UT_ID || 16); // SofaScore unique-tournament id: FIFA World Cup
 
 // ---- simple in-memory cache (respect free-tier rate limits ~10 req/min) ----
 const cache = { data: null, ts: 0 };
@@ -262,93 +262,116 @@ async function fdGet(pathname) {
   return res.json();
 }
 
-/* ---- API-Football: lineups, events, statistics (optional enrichment) ----- */
+/* ---- SportAPI (SofaScore): scorers/cards/subs, lineups, statistics --------- */
 const normName = (s) => (s || "").toLowerCase().normalize("NFD")
-  .replace(/[\u0300-\u036f]/g, "").replace(/\b(fr|pr|republic|of)\b/g, "").replace(/[^a-z0-9]/g, "");
+  .replace(/[\u0300-\u036f]/g, "").replace(/\b(fr|pr|republic|of|ir|the)\b/g, "").replace(/[^a-z0-9]/g, "");
 
-async function afGet(p) {
-  const isRapid = AF_HOST.includes("rapidapi");
-  const headers = isRapid
-    ? { "x-rapidapi-key": AF_TOKEN, "x-rapidapi-host": AF_HOST }
-    : { "x-apisports-key": AF_TOKEN };
-  const res = await fetch(`https://${AF_HOST}${p}`, { headers });
-  if (!res.ok) throw new Error(`api-football ${p} -> ${res.status}`);
+async function saGet(p) {
+  const res = await fetch(`https://${SA_HOST}${p}`, {
+    headers: { "x-rapidapi-host": SA_HOST, "x-rapidapi-key": AF_TOKEN },
+  });
+  if (!res.ok) throw new Error(`sportapi ${p} -> ${res.status}`);
   return res.json();
 }
 
-// Cache the WC fixtures index (team-pair -> AF fixture id) for 1 hour
-let afIndex = { map: null, ts: 0 };
-async function getAfIndex() {
-  if (afIndex.map && Date.now() - afIndex.ts < 60 * 60 * 1000) return afIndex.map;
-  const json = await afGet(`/fixtures?league=${AF_LEAGUE}&season=${AF_SEASON}`);
+// Index World Cup events for a date (team-pair -> SofaScore event id). Cached per date.
+const saDateCache = new Map();
+async function getSaIndexForDate(date) {
+  const hit = saDateCache.get(date);
+  if (hit && Date.now() - hit.ts < 60 * 60 * 1000) return hit.map;
+  const json = await saGet(`/api/v1/sport/football/scheduled-events/${date}`);
   const map = new Map();
-  (json.response || []).forEach((f) => {
-    const key = `${normName(f.teams.home.name)}|${normName(f.teams.away.name)}`;
-    const arr = map.get(key) || [];
-    arr.push({ id: f.fixture.id, date: (f.fixture.date || "").slice(0, 10) });
-    map.set(key, arr);
+  (json.events || []).forEach((ev) => {
+    const ut = ev.tournament?.uniqueTournament;
+    const isWc = (ut?.id === WC_UT_ID) || /world cup/i.test(ut?.name || "");
+    if (!isWc) return;
+    map.set(`${normName(ev.homeTeam?.name)}|${normName(ev.awayTeam?.name)}`, ev.id);
   });
-  afIndex = { map, ts: Date.now() };
+  saDateCache.set(date, { map, ts: Date.now() });
   return map;
 }
-function resolveFixtureId(map, detail) {
-  const arr = map.get(`${normName(detail.home)}|${normName(detail.away)}`);
-  if (!arr || !arr.length) return null;
-  const date = (detail.utc || "").slice(0, 10);
-  return (arr.find((x) => x.date === date) || arr[0]).id;
+function resolveEventId(map, detail) {
+  return map.get(`${normName(detail.home)}|${normName(detail.away)}`) || null;
 }
 
-function mapLineups(json) {
-  return (json.response || []).map((t) => ({
-    team: t.team?.name || "",
-    formation: t.formation || "",
-    coach: t.coach?.name || "",
-    startXI: (t.startXI || []).map((p) => ({ name: p.player?.name, number: p.player?.number, pos: p.player?.pos })),
-    subs: (t.substitutes || []).map((p) => ({ name: p.player?.name, number: p.player?.number, pos: p.player?.pos })),
-  }));
-}
-// API-Football events -> canonical shape (player=OUT/scorer, assist=IN/provider)
-function mapEvents(json) {
-  return (json.response || []).map((e) => {
-    const isSub = /subst/i.test(e.type || "");
-    const min = `${e.time?.elapsed ?? ""}${e.time?.extra ? `+${e.time.extra}` : ""}'`;
-    return {
-      minute: min,
-      team: e.team?.name || "",
-      type: e.type || "",
-      detail: e.detail || "",
-      // For subs API-Football puts the incoming player in `player`; flip to canonical.
-      player: isSub ? (e.assist?.name || "") : (e.player?.name || ""),
-      assist: isSub ? (e.player?.name || "") : (e.assist?.name || ""),
+const saMinute = (i) => (i.time == null ? "" : (i.addedTime ? `${i.time}+${i.addedTime}'` : `${i.time}'`));
+
+// SofaScore incidents -> canonical events (player=OUT/scorer, assist=IN/provider)
+function mapSaIncidents(json, homeName, awayName) {
+  const list = (json.incidents || []).filter((i) =>
+    ["goal", "card", "substitution"].includes(i.incidentType));
+  list.sort((a, b) => (a.time || 0) - (b.time || 0) || (a.addedTime || 0) - (b.addedTime || 0));
+  return list.map((i) => {
+    const team = i.isHome ? homeName : awayName;
+    if (i.incidentType === "goal") {
+      return {
+        minute: saMinute(i), team, type: "Goal", detail: i.incidentClass || "regular",
+        player: i.player?.name || i.player?.shortName || "", assist: i.assist1?.name || "",
+      };
+    }
+    if (i.incidentType === "card") {
+      return {
+        minute: saMinute(i), team, type: "Card",
+        detail: i.incidentClass || "yellow", // yellow | red | yellowRed
+        player: i.player?.name || i.playerName || "", assist: "",
+      };
+    }
+    return { // substitution: explicit in/out
+      minute: saMinute(i), team, type: "subst", detail: "Substitution",
+      player: i.playerOut?.name || "", assist: i.playerIn?.name || "",
     };
   });
 }
 function goalSummaryFromEvents(events) {
   return events.filter((e) => /goal/i.test(e.type)).map((e) => ({
     minute: e.minute, team: e.team, scorer: e.player, assist: e.assist,
-    own: /own/i.test(e.detail), pen: /pen/i.test(e.detail),
+    own: /own/i.test(e.detail), pen: /penalty/i.test(e.detail),
   }));
 }
 
-function mapStats(json) {
-  const r = json.response || [];
-  if (r.length < 2) return null;
-  const [a, b] = r;
-  const rows = (a.statistics || []).map((s, i) => ({
-    type: s.type,
-    home: s.value,
-    away: (b.statistics.find((x) => x.type === s.type) || b.statistics[i] || {}).value,
-  })).filter((x) => x.home != null || x.away != null);
-  return { home: a.team?.name, away: b.team?.name, rows };
+function mapSaLineups(json, homeName, awayName) {
+  if (!json || (!json.home && !json.away)) return [];
+  const side = (block, teamName) => {
+    if (!block) return null;
+    const players = block.players || [];
+    const toP = (p) => ({
+      name: p.player?.name || p.player?.shortName || "",
+      number: p.player?.jerseyNumber || p.jerseyNumber || "",
+      pos: p.player?.position || p.position || "",
+    });
+    return {
+      team: teamName,
+      formation: block.formation || "",
+      coach: "",
+      startXI: players.filter((p) => !p.substitute).map(toP),
+      subs: players.filter((p) => p.substitute).map(toP),
+    };
+  };
+  return [side(json.home, homeName), side(json.away, awayName)].filter(Boolean);
 }
 
-async function getExtras(fixtureId) {
-  const [lu, ev, st] = await Promise.all([
-    afGet(`/fixtures/lineups?fixture=${fixtureId}`).catch(() => ({ response: [] })),
-    afGet(`/fixtures/events?fixture=${fixtureId}`).catch(() => ({ response: [] })),
-    afGet(`/fixtures/statistics?fixture=${fixtureId}`).catch(() => ({ response: [] })),
+function mapSaStats(json, homeName, awayName) {
+  const all = (json.statistics || []).find((s) => s.period === "ALL") || (json.statistics || [])[0];
+  if (!all) return null;
+  const rows = [];
+  (all.groups || []).forEach((g) => (g.statisticsItems || []).forEach((it) => {
+    rows.push({ type: it.name, home: it.home, away: it.away });
+  }));
+  if (!rows.length) return null;
+  return { home: homeName, away: awayName, rows };
+}
+
+async function getExtras(eventId, homeName, awayName) {
+  const [inc, lu, st] = await Promise.all([
+    saGet(`/api/v1/event/${eventId}/incidents`).catch(() => ({ incidents: [] })),
+    saGet(`/api/v1/event/${eventId}/lineups`).catch(() => ({})),
+    saGet(`/api/v1/event/${eventId}/statistics`).catch(() => ({ statistics: [] })),
   ]);
-  return { lineups: mapLineups(lu), events: mapEvents(ev), stats: mapStats(st) };
+  return {
+    events: mapSaIncidents(inc, homeName, awayName),
+    lineups: mapSaLineups(lu, homeName, awayName),
+    stats: mapSaStats(st, homeName, awayName),
+  };
 }
 
 // per-match cache (id -> { data, ts })
@@ -360,20 +383,20 @@ async function getMatch(id) {
 
   if (AF_TOKEN) {
     try {
-      const fid = resolveFixtureId(await getAfIndex(), detail);
-      if (fid) {
-        const ex = await getExtras(fid);
-        detail.lineups = ex.lineups;
-        detail.stats = ex.stats;
-        // football-data free tier has no events, so prefer API-Football's.
+      const date = (detail.utc || "").slice(0, 10);
+      const eid = date ? resolveEventId(await getSaIndexForDate(date), detail) : null;
+      if (eid) {
+        const ex = await getExtras(eid, detail.home, detail.away);
+        if (ex.lineups.length) detail.lineups = ex.lineups;
+        if (ex.stats) detail.stats = ex.stats;
         if (ex.events.length) {
           if (!detail.events.length) detail.events = ex.events;
           if (!detail.goalSummary.length) detail.goalSummary = goalSummaryFromEvents(ex.events);
         }
         detail.hasExtras = detail.hasExtras || ex.events.length > 0
-          || ex.lineups.length > 0 || !!(ex.stats && ex.stats.rows.length);
+          || ex.lineups.length > 0 || !!ex.stats;
       }
-    } catch (e) { console.warn("API-Football extras failed:", e.message); }
+    } catch (e) { console.warn("SportAPI extras failed:", e.message); }
   }
 
   matchCache.set(id, { data: detail, ts: Date.now() });
@@ -458,6 +481,6 @@ http.createServer(async (req, res) => {
     console.log(`  ⚠ No football-data key — serving SAMPLE data only.`);
     console.log(`    Add a key: create a ".fdtoken" file here, or set FD_TOKEN env var.`);
   }
-  console.log(`  Lineups/events/stats: ${AF_TOKEN ? "ON (API-Football)" : "off — add a \".aftoken\" file to enable"}`);
+  console.log(`  Lineups/events/stats: ${AF_TOKEN ? "ON (SportAPI / SofaScore)" : "off — add a \".aftoken\" file + subscribe to SportAPI"}`);
   console.log("");
 });
