@@ -95,9 +95,26 @@ const NEWS = [
   { tag: "Team news", icon: "🩹", title: "Injury & suspension tracker", text: "The key players in doubt ahead of the next round of fixtures." },
 ];
 
+/* ---------- Sample top scorers (fallback) ---------- */
+const SAMPLE_SCORERS = [
+  { rank: 1, player: "K. Mbappé", team: "France", flag: "🇫🇷", goals: 6, assists: 2 },
+  { rank: 2, player: "H. Kane", team: "England", flag: "🇬🇧", goals: 5, assists: 1 },
+  { rank: 3, player: "V. Júnior", team: "Brazil", flag: "🇧🇷", goals: 4, assists: 3 },
+  { rank: 4, player: "L. Messi", team: "Argentina", flag: "🇦🇷", goals: 4, assists: 2 },
+  { rank: 5, player: "C. Ronaldo", team: "Portugal", flag: "🇵🇹", goals: 3, assists: 0 },
+];
+
 /* ============================ Rendering ============================ */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+// Crest image (from API) with emoji-flag fallback if the image fails/missing
+function badge(crest, flag, cls) {
+  if (crest) {
+    return `<img class="${cls} crest" src="${crest}" alt="" loading="lazy" decoding="async" onerror="this.outerHTML=&quot;<span class='${cls}'>${flag || "🏳️"}</span>&quot;">`;
+  }
+  return `<span class="${cls}">${flag || "🏳️"}</span>`;
+}
 
 function matchCard(m) {
   let center;
@@ -110,12 +127,16 @@ function matchCard(m) {
     center = `<div class="match__time">${t}</div><span class="match__status match__status--up">Upcoming</span>`;
   }
   const meta = [m.stage === "Group" ? `Group ${m.group}` : m.stage, m.time].filter(Boolean).join(" • ");
-  return `<div class="match">
-    <div class="match__team match__team--home"><span>${m.home}</span><span class="match__flag">${m.hflag}</span></div>
+  return `<div class="match${m.status === "live" ? " match--live" : ""}">
+    <div class="match__team match__team--home"><span>${m.home}</span>${badge(m.hcrest, m.hflag, "match__flag")}</div>
     <div class="match__center">${center}</div>
-    <div class="match__team"><span class="match__flag">${m.aflag}</span><span>${m.away}</span></div>
+    <div class="match__team">${badge(m.acrest, m.aflag, "match__flag")}<span>${m.away}</span></div>
     <div class="match__meta">${meta}</div>
   </div>`;
+}
+
+function skeleton(n = 5) {
+  return Array.from({ length: n }, () => `<div class="match match--skeleton"><span></span></div>`).join("");
 }
 
 function renderLive(matches) {
@@ -145,7 +166,7 @@ function renderGroups(groups) {
           ${g.rows.map((r, i) => `
             <tr class="${i < 2 ? "qualify" : ""}">
               <td class="pos">${i + 1}</td>
-              <td class="team">${r.flag} ${r.t}</td>
+              <td class="team">${badge(r.crest, r.flag, "tbadge")} ${r.t}</td>
               <td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${r.gd}</td>
               <td class="pts">${r.pts}</td>
             </tr>`).join("")}
@@ -153,6 +174,60 @@ function renderGroups(groups) {
       </table>
     </div>`).join("");
 }
+
+function renderScorers(list) {
+  const el = $("#scorersList");
+  if (!list || !list.length) {
+    el.innerHTML = `<p class="loading">Top scorers will appear once tournament data is available.</p>`;
+    return;
+  }
+  el.innerHTML = list.map((s) => `
+    <div class="scorer${s.rank === 1 ? " scorer--lead" : ""}">
+      <span class="scorer__rank">${s.rank}</span>
+      ${badge(s.crest, s.flag, "scorer__flag")}
+      <div class="scorer__info">
+        <span class="scorer__name">${s.player}</span>
+        <span class="scorer__team">${s.team}</span>
+      </div>
+      <div class="scorer__stats">
+        <span class="scorer__goals">${s.goals}</span>
+        <span class="scorer__sub">goals${s.assists ? ` · ${s.assists} assists` : ""}</span>
+      </div>
+    </div>`).join("");
+}
+
+function computeMeta(matches) {
+  const finished = matches.filter((m) => m.status === "ft").length;
+  const live = matches.filter((m) => m.status === "live").length;
+  const today = matches.filter((m) => /^Today/.test(m.time || "")).length;
+  const goals = matches.reduce((n, m) => n + (m.hs || 0) + (m.as || 0), 0);
+  const teams = new Set();
+  matches.forEach((m) => { if (m.home && m.home !== "TBD") teams.add(m.home); if (m.away && m.away !== "TBD") teams.add(m.away); });
+  return { live, today, finished, goals, teams: teams.size, total: matches.length };
+}
+
+function renderStats(meta) {
+  if (!meta) return;
+  $$("[data-stat]").forEach((el) => {
+    const v = meta[el.dataset.stat];
+    if (v != null) el.textContent = v;
+  });
+  const liveStat = $('[data-stat="live"]');
+  if (liveStat) liveStat.closest(".stat").classList.toggle("stat--live", (meta.live || 0) > 0);
+}
+
+let lastUpdatedTs = null;
+function setUpdated(iso) {
+  lastUpdatedTs = iso ? new Date(iso) : new Date();
+  paintUpdated();
+}
+function paintUpdated() {
+  const el = $("#updatedText");
+  if (!el || !lastUpdatedTs) return;
+  const sec = Math.max(0, Math.round((Date.now() - lastUpdatedTs) / 1000));
+  el.textContent = sec < 10 ? "Updated just now" : sec < 60 ? `Updated ${sec}s ago` : `Updated ${Math.round(sec / 60)}m ago`;
+}
+setInterval(paintUpdated, 15000);
 
 function renderWatch(country) {
   const grid = $("#watchGrid");
@@ -208,14 +283,19 @@ function renderCountrySelect() {
 async function loadData() {
   allMatches = SAMPLE_MATCHES;
   let groups = SAMPLE_GROUPS;
+  let scorers = SAMPLE_SCORERS;
+  let meta = null;
+  let live = false;
 
   if (CONFIG.api.enabled && CONFIG.api.endpoint) {
     try {
-      const res = await fetch(CONFIG.api.endpoint);
+      const res = await fetch(CONFIG.api.endpoint, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.matches)) allMatches = data.matches;
-        if (Array.isArray(data.groups)) groups = data.groups;
+        if (Array.isArray(data.matches) && data.matches.length) { allMatches = data.matches; live = true; }
+        if (Array.isArray(data.groups) && data.groups.length) groups = data.groups;
+        if (Array.isArray(data.scorers) && data.scorers.length) scorers = data.scorers;
+        if (data.meta) meta = data.meta;
       }
     } catch (e) {
       console.warn("Live data fetch failed, using sample data.", e);
@@ -225,6 +305,10 @@ async function loadData() {
   renderLive(allMatches);
   renderSchedule(activeStage);
   renderGroups(groups);
+  renderScorers(scorers);
+  renderStats(meta || computeMeta(allMatches));
+  setUpdated(meta && meta.lastUpdated);
+  return live;
 }
 
 // Auto-refresh live scores (only when API is enabled and there are live games)
@@ -270,6 +354,19 @@ $$(".chip").forEach((chip) => chip.addEventListener("click", () => {
   renderSchedule(chip.dataset.stage);
 }));
 
+// Manual refresh
+const refreshBtn = $("#refreshBtn");
+if (refreshBtn) {
+  refreshBtn.addEventListener("click", async () => {
+    if (refreshBtn.classList.contains("is-spinning")) return;
+    refreshBtn.classList.add("is-spinning");
+    const el = $("#updatedText");
+    if (el) el.textContent = "Refreshing…";
+    await loadData();
+    setTimeout(() => refreshBtn.classList.remove("is-spinning"), 700);
+  });
+}
+
 // Footer year
 $("#year").textContent = new Date().getFullYear();
 
@@ -300,6 +397,7 @@ function initConsent() {
 renderCountrySelect();
 renderVideos();
 renderNews();
+$("#liveMatches").innerHTML = skeleton(5); // loading state before first fetch
 loadData();
 startAutoRefresh();
 initConsent();

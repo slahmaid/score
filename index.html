@@ -30,6 +30,7 @@
         <a href="#live">Live</a>
         <a href="#schedule">Schedule</a>
         <a href="#standings">Standings</a>
+        <a href="#scorers">Top Scorers</a>
         <a href="#watch">Where to Watch</a>
         <a href="#highlights">Highlights</a>
         <a href="#news">News</a>
@@ -77,6 +78,18 @@
           <select id="countrySelect"></select>
         </div>
       </div>
+
+      <!-- Live stats bar (synced from API) -->
+      <div class="container">
+        <div class="statbar" id="statbar">
+          <div class="stat"><span class="stat__num" data-stat="live">–</span><span class="stat__label">Live now</span></div>
+          <div class="stat"><span class="stat__num" data-stat="today">–</span><span class="stat__label">Today</span></div>
+          <div class="stat"><span class="stat__num" data-stat="finished">–</span><span class="stat__label">Played</span></div>
+          <div class="stat"><span class="stat__num" data-stat="goals">–</span><span class="stat__label">Goals</span></div>
+          <div class="stat"><span class="stat__num" data-stat="teams">–</span><span class="stat__label">Teams</span></div>
+          <div class="stat"><span class="stat__num" data-stat="total">–</span><span class="stat__label">Matches</span></div>
+        </div>
+      </div>
     </section>
 
     <!-- ===== AD: top leaderboard ===== -->
@@ -91,9 +104,17 @@
     <section class="section" id="live">
       <div class="container layout">
         <div class="layout__main">
-          <div class="tabs" role="tablist">
-            <button class="tab is-active" data-tab="livePanel" role="tab">🔴 Live &amp; Today</button>
-            <button class="tab" data-tab="schedulePanel" role="tab" id="schedule">📅 Full Schedule</button>
+          <div class="live-toolbar">
+            <div class="tabs" role="tablist">
+              <button class="tab is-active" data-tab="livePanel" role="tab">🔴 Live &amp; Today</button>
+              <button class="tab" data-tab="schedulePanel" role="tab" id="schedule">📅 Full Schedule</button>
+            </div>
+            <div class="updated">
+              <span class="updated__text" id="updatedText">Syncing…</span>
+              <button class="refresh" id="refreshBtn" aria-label="Refresh scores" title="Refresh now">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M17.65 6.35A8 8 0 1 0 19.73 14h-2.08A6 6 0 1 1 12 6a5.9 5.9 0 0 1 4.2 1.8L13 11h7V4z"/></svg>
+              </button>
+            </div>
           </div>
 
           <div class="panel is-active" id="livePanel" role="tabpanel">
@@ -144,6 +165,18 @@
           <p>Live tables — top two of each group advance.</p>
         </div>
         <div class="groups" id="groups"></div>
+      </div>
+    </section>
+
+    <!-- ===== Top scorers ===== -->
+    <section class="section" id="scorers">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow">Golden Boot race</span>
+          <h2>Top scorers</h2>
+          <p>Live from the tournament — goals and assists.</p>
+        </div>
+        <div class="scorers" id="scorersList"></div>
       </div>
     </section>
 
@@ -209,6 +242,7 @@
         <a href="#live">Live scores</a>
         <a href="#schedule">Schedule</a>
         <a href="#standings">Standings</a>
+        <a href="#scorers">Top scorers</a>
         <a href="#watch">Where to watch</a>
       </div>
       <div class="footer__col">

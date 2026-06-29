@@ -102,17 +102,21 @@ function mapMatches(json) {
   return (json.matches || []).map((m) => {
     const st = statusOf(m.status);
     return {
+      id: m.id,
       stage: STAGE_LABEL[m.stage] || "Group",
       group: groupLetter(m.group),
       home: m.homeTeam?.name || "TBD",
       hflag: flagFor(m.homeTeam?.name),
+      hcrest: m.homeTeam?.crest || null,
       away: m.awayTeam?.name || "TBD",
       aflag: flagFor(m.awayTeam?.name),
+      acrest: m.awayTeam?.crest || null,
       hs: m.score?.fullTime?.home ?? null,
       as: m.score?.fullTime?.away ?? null,
       status: st,
       minute: st === "live" ? (m.minute ? `${m.minute}'` : "LIVE") : undefined,
       time: timeLabel(m.utcDate),
+      utcDate: m.utcDate || null,
     };
   });
 }
@@ -125,10 +129,43 @@ function mapStandings(json) {
       rows: (s.table || []).map((r) => ({
         t: r.team?.name || "—",
         flag: flagFor(r.team?.name),
+        crest: r.team?.crest || null,
         p: r.playedGames, w: r.won, d: r.draw, l: r.lost,
         gd: gd(r.goalDifference), pts: r.points,
       })),
     }));
+}
+
+function mapScorers(json) {
+  return (json.scorers || []).slice(0, 10).map((s, i) => ({
+    rank: i + 1,
+    player: s.player?.name || "—",
+    team: s.team?.name || "",
+    flag: flagFor(s.team?.name),
+    crest: s.team?.crest || null,
+    goals: s.goals ?? 0,
+    assists: s.assists ?? 0,
+    penalties: s.penalties ?? 0,
+  }));
+}
+
+function buildMeta(matches, standingsJson) {
+  const finished = matches.filter((m) => m.status === "ft").length;
+  const live = matches.filter((m) => m.status === "live").length;
+  const upcoming = matches.filter((m) => m.status === "up").length;
+  const today = matches.filter((m) => /^Today/.test(m.time)).length;
+  const goals = matches.reduce((n, m) => n + (m.hs ?? 0) + (m.as ?? 0), 0);
+  const teams = new Set();
+  matches.forEach((m) => { if (m.home !== "TBD") teams.add(m.home); if (m.away !== "TBD") teams.add(m.away); });
+  const season = standingsJson?.season || {};
+  return {
+    competition: standingsJson?.competition?.name || "FIFA World Cup",
+    matchday: season.currentMatchday || null,
+    total: matches.length,
+    finished, live, upcoming, today, goals,
+    teams: teams.size,
+    lastUpdated: new Date().toISOString(),
+  };
 }
 
 async function fdGet(pathname) {
@@ -139,11 +176,18 @@ async function fdGet(pathname) {
 
 async function getWorldCup() {
   if (cache.data && Date.now() - cache.ts < CACHE_MS) return cache.data;
-  const [matchesJson, standingsJson] = await Promise.all([
+  const [matchesJson, standingsJson, scorersJson] = await Promise.all([
     fdGet(`/competitions/${COMPETITION}/matches`),
     fdGet(`/competitions/${COMPETITION}/standings`).catch(() => ({ standings: [] })),
+    fdGet(`/competitions/${COMPETITION}/scorers?limit=10`).catch(() => ({ scorers: [] })),
   ]);
-  const data = { matches: mapMatches(matchesJson), groups: mapStandings(standingsJson) };
+  const matches = mapMatches(matchesJson);
+  const data = {
+    matches,
+    groups: mapStandings(standingsJson),
+    scorers: mapScorers(scorersJson),
+    meta: buildMeta(matches, standingsJson),
+  };
   cache.data = data;
   cache.ts = Date.now();
   return data;
@@ -179,7 +223,7 @@ http.createServer(async (req, res) => {
     } catch (e) {
       console.error(e.message);
       res.writeHead(502, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: e.message, matches: [], groups: [] }));
+      res.end(JSON.stringify({ error: e.message, matches: [], groups: [], scorers: [], meta: null }));
     }
     return;
   }
